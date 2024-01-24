@@ -1,11 +1,15 @@
 
+use std::fs;
+
 /// the core (or system?) emulator structure
 /// we start initially with the rv32i base ISA
 pub(crate) struct Emu {
     regs: [u32; 32],
     pc: u32,
+    memory: Vec<u8>,
 }
 
+#[derive(Debug, PartialEq)]
 #[repr(usize)]
 pub enum Register {
     Zero = 0,
@@ -56,10 +60,11 @@ impl From<u32> for Register {
 }
 
 impl Emu {
-    pub fn new() -> Self {
+    pub fn new(size: usize) -> Self {
         Self {
             regs: [0; 32],
             pc: 0,
+            memory: vec![0; size],
         }
     }
 
@@ -73,7 +78,60 @@ impl Emu {
 }
 
 /// RV32I instruction types: R, I, S or U
-struct Rtype {}
+///
+const MASK_3_BITS: u32 = 0b0000_0111;
+const MASK_5_BITS: u32 = 0b0001_1111;
+const MASK_7_BITS: u32 = 0b0111_1111;
+const MASK_12_BITS: u32 = 0b1111_1111_1111;
+const MASK_20_BITS: u32 = 0b1111_1111_1111_1111_1111;
+
+// shifts for the instruction fields
+const RD_SHIFT: usize = 7;
+const IMM_4_0_SHIFT: usize = 7;
+const FUNCT3_SHIFT: usize = 12;
+const IMM_31_12_SHIFT: usize = 12;
+const RS1_SHIFT: usize = 15;
+const RS2_SHIFT: usize = 20;
+const IMM_11_0_SHIFT: usize = 20;
+const FUNCT7_SHIFT: usize = 25;
+const IMM_11_5_SHIFT: usize = 25;
+
+
+// masks for the instruction fields
+const OPCODE_MASK: u32 = MASK_7_BITS;
+const RD_MASK: u32 = MASK_5_BITS << RD_SHIFT;
+const RS1_MASK: u32 = MASK_5_BITS << RS1_SHIFT;
+const RS2_MASK: u32 = MASK_5_BITS << RS2_SHIFT;
+const FUNCT3_MASK: u32 = MASK_3_BITS << FUNCT3_SHIFT;
+const FUNCT7_MASK: u32 = MASK_7_BITS << FUNCT7_SHIFT;
+const IMM_4_0_MASK: u32 = MASK_5_BITS << IMM_4_0_SHIFT;
+const IMM_11_5_MASK: u32 = MASK_7_BITS << IMM_11_5_SHIFT;
+const IMM_11_0_MASK: u32= MASK_12_BITS << IMM_11_0_SHIFT;
+const IMM_31_12_MASK: u32 = MASK_20_BITS << IMM_31_12_SHIFT;
+
+
+
+struct Rtype {
+    rd: Register,
+    rs1: Register,
+    rs2: Register,
+    funct3: u32,
+    funct7: u32,
+}
+
+impl From<u32> for Rtype {
+    fn from(instruction: u32) -> Self {
+        let rd = (instruction & RD_MASK) >> RD_SHIFT;
+        let rd = Register::from(rd);
+        let rs1 = Register::from((instruction & RS1_MASK) >> RS1_SHIFT);
+        let rs2 = Register::from((instruction & RS2_MASK) >> RS2_SHIFT);
+        let funct3 = (instruction & FUNCT3_MASK) >> FUNCT3_SHIFT;
+        let funct7 = (instruction & FUNCT7_MASK) >> FUNCT7_SHIFT;
+
+        Rtype { rd, rs1, rs2, funct3, funct7 }
+    }
+}
+
 struct Itype {}
 struct Stype {}
 struct Utype {}
@@ -84,9 +142,84 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
-        let emu = Emu::new();
+    fn new_emu() {
+        let emu = Emu::new(8);
         assert_eq!(emu.pc(), 0);
         assert_eq!(emu.get_reg(0), 0);
     }
+
+    #[test]
+    fn rtype_split() {
+        // not a real Rtype instruction, but a value easy to test
+        let instruction = 0b0000111_00010_00001_011_01101_1111111;
+
+        let rtype = Rtype::from(instruction);
+
+        assert_eq!(rtype.funct3, 3);
+        assert_eq!(rtype.funct7, 7);
+        assert_eq!(rtype.rs1, 1.into());
+        assert_eq!(rtype.rs2, 2.into());
+        assert_eq!(rtype.rd, 0x000D.into());
+    }
+
+    #[test]
+    fn rtype_and_a5_a5_a4() {
+        // b3 f7 e7 00  	and	a5, a5, a4
+        // 0000000 rs2 rs1 111 rd 0110011
+        let instruction = 0x00e7_f7b3;
+
+        let rtype = Rtype::from(instruction);
+
+        assert_eq!(rtype.funct3, 0b111);
+        assert_eq!(rtype.funct7, 0);
+        assert_eq!(rtype.rs1, Register::A5);
+        assert_eq!(rtype.rs2, Register::A4);
+        assert_eq!(rtype.rd, Register::A5);
+    }
+
+    #[test]
+    fn rtype_or_a5_a5_a4() {
+        // b3 e7 e7 00  	or	a5, a5, a4
+        // 0000000 rs2 rs1 110 rd 0110011
+        let instruction = 0x00e7_e7b3;
+
+        let rtype = Rtype::from(instruction);
+
+        assert_eq!(rtype.funct3, 0b110);
+        assert_eq!(rtype.funct7, 0);
+        assert_eq!(rtype.rs1, Register::A5);
+        assert_eq!(rtype.rs2, Register::A4);
+        assert_eq!(rtype.rd, Register::A5);
+    }
+
+    #[test]
+    fn rtype_or_a0_a0_a4() {
+        // 33 65 f5 00  	or	a0, a0, a5
+        // 0000000 rs2 rs1 110 rd 0110011
+        let instruction = 0x00f5_6533;
+
+        let rtype = Rtype::from(instruction);
+
+        assert_eq!(rtype.funct3, 0b110);
+        assert_eq!(rtype.funct7, 0);
+        assert_eq!(rtype.rs1, Register::A0);
+        assert_eq!(rtype.rs2, Register::A5);
+        assert_eq!(rtype.rd, Register::A0);
+    }
+
+    #[test]
+    fn rtype_sub_a0_s0_a0() {
+        // 33 05 a4 40  	sub	a0, s0, a0
+        // 010000 rs2 rs1 000 rd 0110011
+        let instruction = 0x40a4_0533;
+
+        let rtype = Rtype::from(instruction);
+
+        assert_eq!(rtype.funct3, 0b000);
+        assert_eq!(rtype.funct7, 0b0100000);
+        assert_eq!(rtype.rs1, Register::S0Fp);
+        assert_eq!(rtype.rs2, Register::A0);
+        assert_eq!(rtype.rd, Register::A0);
+    }
+
 }
