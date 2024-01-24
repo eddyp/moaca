@@ -132,7 +132,27 @@ impl From<u32> for Rtype {
     }
 }
 
-struct Itype {}
+struct Itype {
+    rd: Register,
+    rs1: Register,
+    funct3: u32,
+    imm11_0: u32,
+}
+
+impl From<u32> for Itype {
+    fn from(instruction: u32) -> Self {
+        let rd = dbg!((dbg!(instruction) & RD_MASK) >> RD_SHIFT);
+        let rd = Register::from(rd);
+        let rs1 = Register::from((instruction & RS1_MASK) >> RS1_SHIFT);
+        let funct3 = (instruction & FUNCT3_MASK) >> FUNCT3_SHIFT;
+        // sign extend the immediate, then treat as u32
+        let imm11_0 = (((instruction & IMM_11_0_MASK) as i32)
+                                 >> IMM_11_0_SHIFT) as u32;
+
+        Itype { rd, rs1, funct3, imm11_0 }
+    }
+}
+
 struct Stype {}
 struct Utype {}
 
@@ -220,6 +240,63 @@ mod tests {
         assert_eq!(rtype.rs1, Register::S0Fp);
         assert_eq!(rtype.rs2, Register::A0);
         assert_eq!(rtype.rd, Register::A0);
+    }
+
+    #[test]
+    fn itype_addi_sp_sp_m140() {
+        // 13 01 41 f7  	addi	sp, sp, -140
+        // imm11:0 rs1 000 rd 0010011
+        let instruction = 0xf741_0113;
+
+        let itype = Itype::from(instruction);
+
+        assert_eq!(itype.funct3, 0b000);
+        assert_eq!(itype.rs1, Register::Sp);
+        assert_eq!(itype.rd, Register::Sp);
+        assert_eq!(itype.imm11_0, -140i32 as u32);
+    }
+
+    #[test]
+    fn itype_addi_t0_t0_292() {
+        // 93 82 42 12  	addi	t0, t0, 292
+        // imm11:0 rs1 000 rd 0010011
+        let instruction = 0x1242_8293;
+
+        let itype = Itype::from(instruction);
+
+        assert_eq!(itype.funct3, 0b000);
+        assert_eq!(itype.rs1, Register::T0);
+        assert_eq!(itype.rd, Register::T0);
+        assert_eq!(itype.imm11_0, 292);
+    }
+
+    #[test]
+    fn itype_andi_a5_s0_15() {
+        // 93 f7 f4 00  	andi	a5, s1, 15
+        // imm11:0 rs1 111 rd 0010011
+        let instruction = 0x00f4_f793;
+
+        let itype = Itype::from(instruction);
+
+        assert_eq!(itype.funct3, 0b111);
+        assert_eq!(itype.rs1, Register::S1);
+        assert_eq!(itype.rd, Register::A5);
+        assert_eq!(itype.imm11_0, 15);
+    }
+
+    #[test]
+    fn itype_sltiu_a5_a4_26() {
+        // 93 37 a7 01  	sltiu	a5, a4, 26
+        // imm11:0 rs1 011 rd 0010011
+        let instruction =
+            u32::from_le_bytes([0x93, 0x37, 0xa7, 0x01]);
+
+        let itype = Itype::from(instruction);
+
+        assert_eq!(itype.funct3, 0b011);
+        assert_eq!(itype.rs1, Register::A4);
+        assert_eq!(itype.rd, Register::A5);
+        assert_eq!(itype.imm11_0, 26);
     }
 
 }
