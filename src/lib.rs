@@ -1,5 +1,6 @@
 
 use std::fs;
+use std::path::Path;
 
 /// the core (or system?) emulator structure
 /// we start initially with the rv32i base ISA
@@ -68,13 +69,46 @@ impl Emu {
         }
     }
 
+    pub fn new_from_file(filename: &str, base: usize) -> Self {
+        if let Some(memory) = Self::load_memory_vec_from_file(filename, base) {
+            Self {
+                regs: [0; 32],
+                pc: 0,
+                memory,
+            }
+        } else {
+            panic!("Can't load memory from file {filename} at offset {base}");
+        }
+    }
+
     pub fn pc(&self) -> u32 {
         self.pc
+    }
+
+    pub fn set_pc(&mut self, pc: u32) {
+        assert!(pc < self.memory.len() as u32);
+        self.pc = pc;
     }
 
     pub fn get_reg(&self, reg_index: u32) -> u32 {
         self.regs[Register::from(reg_index) as usize]
     }
+
+    fn load_memory_vec_from_file(raw_binary_file: &str, base: usize) -> Option<Vec<u8>> {
+        let file_name = Path::new(raw_binary_file);
+        if file_name.is_file() {
+            let mut contents = fs::read(raw_binary_file).ok()?;
+            let mut memory = vec![0u8; base];
+
+            memory.reserve_exact(contents.len());
+            memory.append(&mut contents);
+
+            Some(memory)
+        } else {
+            None
+        }
+    }
+
 }
 
 /// RV32I instruction types: R, I, S or U
@@ -167,6 +201,48 @@ mod tests {
         assert_eq!(emu.pc(), 0);
         assert_eq!(emu.get_reg(0), 0);
     }
+
+    // #[test]
+    // fn new_emu_from_file_offset_0() {
+    //     let emu = Emu::new_from_file("images/basic.binary", 0);
+    //     assert_eq!(emu.pc(), 0);
+    //     assert_eq!(emu.get_reg(0), 0);
+    //     assert_eq!(emu.memory.as_slice().get(0), Some(0x6f).as_ref());
+    //     assert_eq!(emu.memory.as_slice().get(0x124), Some(0x13).as_ref());
+    // }
+
+    // #[test]
+    // fn new_emu_from_file_offset_0x2000() {
+    //     let emu = Emu::new_from_file("images/basic.binary", 0x2000);
+    //     assert_eq!(emu.pc(), 0);
+    //     assert_eq!(emu.get_reg(0), 0);
+    //     assert_eq!(emu.memory.as_slice().get(0x2000), Some(0x6f).as_ref());
+    //     assert_eq!(emu.memory.as_slice().get(0x2124), Some(0x13).as_ref());
+    //     assert_eq!(emu.memory.as_slice().get(0x229c), Some(0x93).as_ref());
+    // }
+
+    #[test]
+    fn set_pc_at_4() {
+        let mut emu = Emu::new(8);
+        emu.set_pc(4);
+        assert_eq!(emu.pc(), 4);
+    }
+
+    // #[test]
+    // fn set_pc_at_boot_vector() {
+    //     let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
+    //     emu.set_pc(0x2000);
+    //     assert_eq!(emu.pc(), 0x2000);
+    // }
+
+    #[test]
+    #[should_panic]
+    fn set_pc_out_side_mem_panics() {
+        let mut emu = Emu::new(8);
+        assert_eq!(emu.memory.len(), 8);
+        emu.set_pc(12);
+    }
+
 
     #[test]
     fn rtype_split() {
