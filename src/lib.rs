@@ -202,24 +202,24 @@ mod tests {
         assert_eq!(emu.get_reg(0), 0);
     }
 
-    // #[test]
-    // fn new_emu_from_file_offset_0() {
-    //     let emu = Emu::new_from_file("images/basic.binary", 0);
-    //     assert_eq!(emu.pc(), 0);
-    //     assert_eq!(emu.get_reg(0), 0);
-    //     assert_eq!(emu.memory.as_slice().get(0), Some(0x6f).as_ref());
-    //     assert_eq!(emu.memory.as_slice().get(0x124), Some(0x13).as_ref());
-    // }
+    #[test]
+    fn new_emu_from_file_offset_0() {
+        let emu = Emu::new_from_file("images/basic.binary", 0);
+        assert_eq!(emu.pc(), 0);
+        assert_eq!(emu.get_reg(0), 0);
+        assert_eq!(emu.memory.as_slice().get(0), Some(0x6f).as_ref());
+        assert_eq!(emu.memory.as_slice().get(0x124), Some(0x13).as_ref());
+    }
 
-    // #[test]
-    // fn new_emu_from_file_offset_0x2000() {
-    //     let emu = Emu::new_from_file("images/basic.binary", 0x2000);
-    //     assert_eq!(emu.pc(), 0);
-    //     assert_eq!(emu.get_reg(0), 0);
-    //     assert_eq!(emu.memory.as_slice().get(0x2000), Some(0x6f).as_ref());
-    //     assert_eq!(emu.memory.as_slice().get(0x2124), Some(0x13).as_ref());
-    //     assert_eq!(emu.memory.as_slice().get(0x229c), Some(0x93).as_ref());
-    // }
+    #[test]
+    fn new_emu_from_file_offset_0x2000() {
+        let emu = Emu::new_from_file("images/basic.binary", 0x2000);
+        assert_eq!(emu.pc(), 0);
+        assert_eq!(emu.get_reg(0), 0);
+        assert_eq!(emu.memory.as_slice().get(0x2000), Some(0x6f).as_ref());
+        assert_eq!(emu.memory.as_slice().get(0x2124), Some(0x13).as_ref());
+        assert_eq!(emu.memory.as_slice().get(0x229c), Some(0x93).as_ref());
+    }
 
     #[test]
     fn set_pc_at_4() {
@@ -228,12 +228,12 @@ mod tests {
         assert_eq!(emu.pc(), 4);
     }
 
-    // #[test]
-    // fn set_pc_at_boot_vector() {
-    //     let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
-    //     emu.set_pc(0x2000);
-    //     assert_eq!(emu.pc(), 0x2000);
-    // }
+    #[test]
+    fn set_pc_at_boot_vector() {
+        let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
+        emu.set_pc(0x2000);
+        assert_eq!(emu.pc(), 0x2000);
+    }
 
     #[test]
     #[should_panic]
