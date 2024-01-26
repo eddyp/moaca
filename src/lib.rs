@@ -411,5 +411,64 @@ mod tests {
         assert_eq!(stype.imm11_0, 0);
     }
 
+    #[test]
+    fn stype_sw_ra_12_sp() {
+        // 23 26 11 00  	sw	ra, 12(sp)
+        // imm11:5 rs2 rs1 010 imm4:0 0100011
+        let instruction =
+            u32::from_le_bytes([0x23, 0x26, 0x11, 0x00]);
+
+        let stype = Stype::from(instruction);
+
+        assert_eq!(stype.funct3, 0b010);
+        assert_eq!(stype.rs2, Register::Ra);
+        assert_eq!(stype.rs1, Register::Sp);
+        assert_eq!(stype.imm11_0, 12);
+    }
+
+    #[test]
+    fn stype_sw_a0_m788_a5() {
+        // 23 a6 a7 ce  	sw	a0, -788(a5)
+        // imm11:5 rs2 rs1 010 imm4:0 0100011
+        let instruction =
+        u32::from_le_bytes([0x23, 0xa6, 0xa7, 0xce]);
+
+        let stype = Stype::from(instruction);
+
+        assert_eq!(stype.funct3, 0b010);
+        assert_eq!(stype.rs2, Register::A0);
+        assert_eq!(stype.rs1, Register::A5);
+        assert_eq!(stype.imm11_0, -788i32 as u32);
+    }
+
+    #[test]
+    fn stype_sh_a5_m772_s1() {
+        // 23 9e f4 ce  	sh	a5, -772(s1)
+        // imm11:5 rs2 rs1 001 imm4:0 0100011
+        let instruction =
+            u32::from_le_bytes([0x23, 0x9e, 0xf4, 0xce]);
+
+        let stype = Stype::from(instruction);
+
+        assert_eq!(stype.funct3, 0b001);
+        assert_eq!(stype.rs2, Register::A5);
+        assert_eq!(stype.rs1, Register::S1);
+        assert_eq!(stype.imm11_0, -772i32 as u32);
+    }
+
+    #[test]
+    fn stype_sb_a5_m1_s0() {
+        // a3 0f f4 fe  	sb	a5, -1(s0)
+        // imm11:5 rs2 rs1 000 imm4:0 0100011
+        let instruction =
+            u32::from_le_bytes([0xa3, 0x0f, 0xf4, 0xfe]);
+
+        let stype = Stype::from(instruction);
+
+        assert_eq!(stype.funct3, 0b000);
+        assert_eq!(stype.rs2, Register::A5);
+        assert_eq!(stype.rs1, Register::S0Fp);
+        assert_eq!(stype.imm11_0, -1i32 as u32);
+    }
 
 }
