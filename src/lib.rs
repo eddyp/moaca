@@ -209,8 +209,22 @@ impl From<u32> for Stype {
     }
 }
 
-struct Utype {}
+struct Utype {
+    rd: Register,
+    imm31_12: u32,
+}
 
+impl From<u32> for Utype {
+    fn from(instruction: u32) -> Self {
+        let rd = (instruction & RD_MASK) >> RD_SHIFT;
+        let rd = Register::from(rd);
+        // sign extend the immediate, then treat as u32
+        let imm31_12 = (((instruction & IMM_31_12_MASK) as i32)
+                                >> IMM_31_12_SHIFT) as u32;
+
+        Self { rd, imm31_12 }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -471,4 +485,29 @@ mod tests {
         assert_eq!(stype.imm11_0, -1i32 as u32);
     }
 
+    #[test]
+    fn utype_lui_a5_7933() {
+        // b7 d7 ef 01  	lui	a5, 7933
+        // imm31:12 rd 0110111
+        let instruction =
+            u32::from_le_bytes([0xb7, 0xd7, 0xef, 0x01]);
+
+        let utype = Utype::from(instruction);
+
+        assert_eq!(utype.rd, Register::A5);
+        assert_eq!(utype.imm31_12, 7933);
+    }
+
+    #[test]
+    fn utype_auipc_t1_1() {
+        // 17 13 00 00  	auipc	t1, 1
+        // imm31:12 rd 0010111
+        let instruction =
+            u32::from_le_bytes([0x17, 0x13, 0x00, 0x00]);
+
+        let utype = Utype::from(instruction);
+
+        assert_eq!(utype.rd, Register::T1);
+        assert_eq!(utype.imm31_12, 1);
+    }
 }
