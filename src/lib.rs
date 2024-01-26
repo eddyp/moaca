@@ -162,7 +162,7 @@ impl From<u32> for Rtype {
         let funct3 = (instruction & FUNCT3_MASK) >> FUNCT3_SHIFT;
         let funct7 = (instruction & FUNCT7_MASK) >> FUNCT7_SHIFT;
 
-        Rtype { rd, rs1, rs2, funct3, funct7 }
+        Self { rd, rs1, rs2, funct3, funct7 }
     }
 }
 
@@ -183,11 +183,32 @@ impl From<u32> for Itype {
         let imm11_0 = (((instruction & IMM_11_0_MASK) as i32)
                                  >> IMM_11_0_SHIFT) as u32;
 
-        Itype { rd, rs1, funct3, imm11_0 }
+        Self { rd, rs1, funct3, imm11_0 }
     }
 }
 
-struct Stype {}
+struct Stype {
+    rs1: Register,
+    rs2: Register,
+    funct3: u32,
+    imm11_0: u32,
+}
+
+impl From<u32> for Stype {
+    fn from(instruction: u32) -> Self {
+        let rs1 = Register::from((instruction & RS1_MASK) >> RS1_SHIFT);
+        let rs2 = Register::from((instruction & RS2_MASK) >> RS2_SHIFT);
+        let funct3 = (instruction & FUNCT3_MASK) >> FUNCT3_SHIFT;
+        let imm11_5 = (((instruction & IMM_11_5_MASK) as i32
+                                >> IMM_11_5_SHIFT) as u32) << 5;
+        let imm4_0 = (instruction & IMM_4_0_MASK) >> IMM_4_0_SHIFT;
+        // sign extend the immediate, then treat as u32
+        let imm11_0 = imm11_5 | imm4_0;
+
+        Self { rs1, rs2, funct3, imm11_0 }
+    }
+}
+
 struct Utype {}
 
 
@@ -374,5 +395,21 @@ mod tests {
         assert_eq!(itype.rd, Register::A5);
         assert_eq!(itype.imm11_0, 26);
     }
+
+    #[test]
+    fn stype_sw_zero_0_t0() {
+        // 23 a0 02 00  	sw	zero, 0(t0)
+        // imm11:5 rs2 rs1 010 imm4:0 0100011
+        let instruction =
+            u32::from_le_bytes([0x23, 0xa0, 0x02, 0x00]);
+
+        let stype = Stype::from(instruction);
+
+        assert_eq!(stype.funct3, 0b010);
+        assert_eq!(stype.rs2, Register::Zero);
+        assert_eq!(stype.rs1, Register::T0);
+        assert_eq!(stype.imm11_0, 0);
+    }
+
 
 }
