@@ -175,7 +175,7 @@ struct Itype {
 
 impl From<u32> for Itype {
     fn from(instruction: u32) -> Self {
-        let rd = dbg!((dbg!(instruction) & RD_MASK) >> RD_SHIFT);
+        let rd = (instruction & RD_MASK) >> RD_SHIFT;
         let rd = Register::from(rd);
         let rs1 = Register::from((instruction & RS1_MASK) >> RS1_SHIFT);
         let funct3 = (instruction & FUNCT3_MASK) >> FUNCT3_SHIFT;
