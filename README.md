@@ -8,8 +8,6 @@ Execute and keep track of the types of instructions that were executed.
 
 ## References
 
-## References
-
 [The RISC-V Instruction Set Manual, Volume I: Unprivileged ISA, Document Version 20191213](https://riscv.org/wp-content/uploads/2019/12/riscv-spec-20191213.pdf)
 
 Instruction listing:
