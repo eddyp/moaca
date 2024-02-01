@@ -347,7 +347,9 @@ mod tests {
     fn new_emu() {
         let emu = Emu::new(8);
         assert_eq!(emu.pc(), 0);
-        assert_eq!(emu.get_reg_x(0), 0);
+        for i in 0..32 {
+            assert_eq!(emu.get_reg_x(i), 0);
+        }
     }
 
     #[test]
