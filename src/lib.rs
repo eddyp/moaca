@@ -161,7 +161,7 @@ impl Emu {
                     if Register::Zero != jal.rd {
                         self.regs[jal.rd as usize] = self.pc + 4;
                     }
-                    self.set_pc((pc as i32 + offset) as u32);
+                    self.set_pc((pc as i32 + offset -4) as u32);
                 },
                 0b0110111 => { /* LUI - U type */
                     let lui = Utype::from(instruction);
@@ -172,7 +172,6 @@ impl Emu {
                         panic!("Don't know what LUI X0, IMM should do!");
                     }
 
-                    self.pc += 4;
                 },
                 0b0010011 => { /* I-type instructions - ADDI, SLTI... */
                     let itype = Itype::from(instruction);
@@ -193,7 +192,25 @@ impl Emu {
                             found_unkown_opcodes += 1;
                         }
                     };
-                    self.pc += 4;
+
+                },
+                0b0100011 => { // SW, SH, SB
+                    // abuse Rtype until we have Stype
+                    let sx = Rtype::from(instruction);
+                    let subtype = sx.funct3;
+
+                    eprintln!("Ignored Stype {subtype} 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
+                    found_unkown_opcodes += 1;
+
+                    match subtype {
+                        0b010 => { // SW
+                            unimplemented!("");
+
+                        },
+                        _ => {
+                            unimplemented!("");
+                        }
+                    }
 
                 },
                 /* Zicsr */
@@ -210,17 +227,16 @@ impl Emu {
                             found_unkown_opcodes += 1;
                         },
                     };
-                    self.pc += 4;
 
                 },
                 _ =>  {
                     eprintln!("Ignoring unhandled opcode 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
                     found_unkown_opcodes += 1;
-                    self.pc += 4;
                 },
                 // _ => panic!("Don't know how to decode opcode 0x{opcode:02X} / 0b{opcode:07b}"),
 
             }
+            self.pc += 4;
         }
         if found_unkown_opcodes > 0 {
             panic!("Skipped {found_unkown_opcodes} instructions with unknown opcodes after {steps} steps. Stopping!");
@@ -445,6 +461,7 @@ mod tests {
         assert_eq!(emu.memory.as_slice().get(0x2003), Some(0x25).as_ref());
         assert_eq!(emu.memory.as_slice().get(0x2007), Some(0xf7).as_ref());
     }
+
 
     #[test]
     fn set_pc_at_4() {
