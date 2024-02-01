@@ -90,7 +90,7 @@ impl Emu {
         self.pc = pc;
     }
 
-    pub fn get_reg(&self, reg_index: u32) -> u32 {
+    pub fn get_reg_x(&self, reg_index: u32) -> u32 {
         self.regs[Register::from(reg_index) as usize]
     }
 
@@ -299,14 +299,14 @@ mod tests {
     fn new_emu() {
         let emu = Emu::new(8);
         assert_eq!(emu.pc(), 0);
-        assert_eq!(emu.get_reg(0), 0);
+        assert_eq!(emu.get_reg_x(0), 0);
     }
 
     #[test]
     fn new_emu_from_file_offset_0() {
         let emu = Emu::new_from_file("images/basic.binary", 0);
         assert_eq!(emu.pc(), 0);
-        assert_eq!(emu.get_reg(0), 0);
+        assert_eq!(emu.get_reg_x(0), 0);
         assert_eq!(emu.memory.as_slice().get(0), Some(0x6f).as_ref());
         assert_eq!(emu.memory.as_slice().get(0x124), Some(0x13).as_ref());
     }
@@ -315,7 +315,7 @@ mod tests {
     fn new_emu_from_file_offset_0x2000() {
         let emu = Emu::new_from_file("images/basic.binary", 0x2000);
         assert_eq!(emu.pc(), 0);
-        assert_eq!(emu.get_reg(0), 0);
+        assert_eq!(emu.get_reg_x(0), 0);
         assert_eq!(emu.memory.as_slice().get(0x2000), Some(0x6f).as_ref());
         assert_eq!(emu.memory.as_slice().get(0x2124), Some(0x13).as_ref());
         assert_eq!(emu.memory.as_slice().get(0x229c), Some(0x93).as_ref());
