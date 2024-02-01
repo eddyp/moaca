@@ -8,6 +8,7 @@ pub struct Emu {
     regs: [u32; 32],
     pc: u32,
     memory: Vec<u8>,
+    csr: Vec<u8>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -66,6 +67,7 @@ impl Emu {
             regs: [0; 32],
             pc: 0,
             memory: vec![0; size],
+            csr: vec![0; 4096],
         }
     }
 
@@ -75,6 +77,7 @@ impl Emu {
                 regs: [0; 32],
                 pc: 0,
                 memory,
+                csr: vec![0; 4096],
             }
         } else {
             panic!("Can't load memory from file {filename} at offset {base}");
@@ -98,6 +101,7 @@ impl Emu {
             regs: [0; 32],
             pc: 0,
             memory,
+            csr: vec![0; 4096],
         }
     }
 
@@ -191,7 +195,24 @@ impl Emu {
                     };
                     self.pc += 4;
 
-                }
+                },
+                /* Zicsr */
+                0b1110011 => { /* SYSTEM / CSR* */
+                    let itype = Itype::from(instruction);
+                    let subtype = itype.funct3;
+
+                    match subtype {
+                        0b001 => { // CSRRW
+                            eprintln!("Ignorring CSRRW ({subtype}) @ address 0x{pc:08X}");
+                        },
+                        _ => {
+                            eprintln!("Ignored SYSTEM {subtype} 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
+                            found_unkown_opcodes += 1;
+                        },
+                    };
+                    self.pc += 4;
+
+                },
                 _ =>  {
                     eprintln!("Ignoring unhandled opcode 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
                     found_unkown_opcodes += 1;
