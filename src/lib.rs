@@ -94,6 +94,10 @@ impl Emu {
         self.regs[Register::from(reg_index) as usize]
     }
 
+    pub fn get_reg(&self, reg_id: Register) -> u32 {
+        self.regs[reg_id as usize]
+    }
+
     fn load_memory_vec_from_file(raw_binary_file: &str, base: usize) -> Option<Vec<u8>> {
         let file_name = Path::new(raw_binary_file);
         if file_name.is_file() {
@@ -346,6 +350,18 @@ mod tests {
         assert_eq!(emu.pc(), 0x2258);
     }
 
+    #[test]
+    fn exec_lui_sp_5() {
+        let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
+        emu.set_pc(0x2258);
+        let before_pc = emu.pc();
+        assert_eq!(before_pc, 0x2258);
+
+        // 2258: 37 51 00 00  	lui	sp, 5
+        emu.execute(1usize);
+        assert_eq!(emu.get_reg(Register::Sp), 0x5);
+        assert_eq!(emu.pc(), before_pc + 4);
+    }
 
     #[test]
     #[should_panic]
