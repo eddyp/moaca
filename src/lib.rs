@@ -86,7 +86,7 @@ impl Emu {
     }
 
     pub fn set_pc(&mut self, pc: u32) {
-        assert!(dbg!(pc) < dbg!(self.memory.len() as u32));
+        assert!(pc < self.memory.len() as u32);
         self.pc = pc;
     }
 
@@ -114,6 +114,8 @@ impl Emu {
     }
 
     pub fn execute(&mut self, steps: usize) {
+        let mut found_unkown_opcodes = 0usize;
+
         for _ in 0..steps {
             let pc = self.pc() as usize;
             let instr_bytes: [u8; 4] = if let Ok(four_bytes) = &(self.memory[pc..(pc+4)]).try_into() {
@@ -121,36 +123,64 @@ impl Emu {
             } else {
                 panic!("Not enough bytes in memory to read one instruction a address 0x{pc:08X}!")
             };
-    
+
             let instruction = u32::from_le_bytes(instr_bytes);
-    
+
             let opcode = instruction & OPCODE_MASK;
-    
+
             match opcode {
                 0b1101111 => { /* JAL - Jtype ( Utype?) */
                     let jal = Jtype::from(instruction);
-    
-                    let offset = dbg!(jal.offset);
-                    if let Register::Zero = jal.rd {
-                        self.set_pc((pc as i32 + offset) as u32);
-                    } else {
-                        panic!("Don't know how to execute 'JAL (Xn) offset'");
+
+                    let offset = jal.offset;
+                    if Register::Zero != jal.rd {
+                        self.regs[jal.rd as usize] = self.pc + 4;
                     }
+                    self.set_pc((pc as i32 + offset) as u32);
                 },
                 0b0110111 => { /* LUI - U type */
                     let lui = Utype::from(instruction);
-    
+
                     if lui.rd != Register::Zero {
                         self.regs[lui.rd as usize] = lui.imm31_12;
                     } else {
                         panic!("Don't know what LUI X0, IMM should do!");
                     }
-    
+
                     self.pc += 4;
                 },
-                _ => panic!("Don't know how to decode opcode 0x{opcode:02X} / 0b{opcode:07b}"),
-    
+                0b0010011 => { /* I-type instructions - ADDI, SLTI... */
+                    let itype = Itype::from(instruction);
+
+                    let subtype = itype.funct3;
+
+                    match subtype {
+                        0b000 => {
+                            /* ADDI */
+                            let result = self.get_reg(itype.rs1) as i32;
+                            result.wrapping_add(itype.imm11_0 as i32);
+
+                            self.regs[itype.rd as usize] = result as u32;
+                        },
+                        _ => {
+                            eprintln!("Ignored Itype {subtype} 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
+                            found_unkown_opcodes += 1;
+                        }
+                    };
+                    self.pc += 4;
+
+                }
+                _ =>  {
+                    eprintln!("Ignoring unhandled opcode 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
+                    found_unkown_opcodes += 1;
+                    self.pc += 4;
+                },
+                // _ => panic!("Don't know how to decode opcode 0x{opcode:02X} / 0b{opcode:07b}"),
+
             }
+        }
+        if found_unkown_opcodes > 0 {
+            panic!("Skipped {found_unkown_opcodes} instructions with unknown opcodes after {steps} steps. Stopping!");
         }
     }
 
@@ -290,7 +320,7 @@ impl From<u32> for Jtype {
 
 
         // sign extend the immediate
-        let instruction = dbg!(instruction as i32);
+        let instruction = instruction as i32;
         let offset31_20 = (instruction & (0x1 << 31)) >> 31 << 20;
 
         let offset10_1 = (instruction & ((MASK_10_BITS as i32) << 21)) >> 20;
@@ -301,8 +331,8 @@ impl From<u32> for Jtype {
 
         let offset = offset31_20 | offset19_12 | offset11 | offset10_1;
 
-        eprintln!("{instruction:04X}");
-        eprintln!("{offset:04X} : 31:20 {offset31_20:04X} 19:12 {offset19_12:04X} 11 {offset11:04X} 10:1 {offset10_1:04X}");
+        // dbg!("Jtype instruction: {instruction:04X}");
+        // dbg!("offset: {offset:04X} : 31:20 {offset31_20:04X} 19:12 {offset19_12:04X} 11 {offset11:04X} 10:1 {offset10_1:04X}");
 
         Self {rd, offset}
     }
@@ -374,6 +404,15 @@ mod tests {
         emu.execute(1usize);
         assert_eq!(emu.get_reg(Register::Sp), 0x5);
         assert_eq!(emu.pc(), before_pc + 4);
+    }
+
+    #[test]
+    fn exec_multiple_instructions() {
+        let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
+        emu.set_pc(0x2000);
+        assert_eq!(emu.pc(), 0x2000);
+        emu.execute(32);
+        assert_ne!(emu.pc(), 0x2258);
     }
 
     #[test]
