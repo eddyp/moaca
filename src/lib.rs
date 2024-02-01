@@ -129,7 +129,8 @@ impl Emu {
                 if let Register::Zero = jal.rd {
                     self.set_pc((pc as i32 + offset) as u32);
                 } else {
-                panic!("Don't know how to execute 'JAL (Xn) offset'");
+                    panic!("Don't know how to execute 'JAL (Xn) offset'");
+                }
             },
             _ => panic!("Don't know how to decode opcode 0x{opcode:02X} / 0b{opcode:07b}"),
 
