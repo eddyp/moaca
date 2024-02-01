@@ -272,7 +272,7 @@ impl From<u32> for Jtype {
 
         // sign extend the immediate
         let instruction = dbg!(instruction as i32);
-        let offset31_20 = (instruction & 0x8000) >> 30 << 20;
+        let offset31_20 = (instruction & (0x1 << 31)) >> 31 << 20;
 
         let offset10_1 = (instruction & ((MASK_10_BITS as i32) << 21)) >> 20;
         let offset11 = (instruction & (0x1 << 20)) >> 20 << 11;
@@ -613,7 +613,7 @@ mod tests {
         let jtype = Jtype::from(instruction);
 
         assert_eq!(jtype.rd, Register::Zero);
-        // the original instruction was at address 0x2000
+        // the original instruction was at address 0x239c
         assert_eq!(jtype.offset, -0x2c);
     }
 
