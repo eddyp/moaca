@@ -136,6 +136,17 @@ impl Emu {
                     panic!("Don't know how to execute 'JAL (Xn) offset'");
                 }
             },
+            0b0110111 => { /* LUI - U type */
+                let lui = Utype::from(instruction);
+
+                if lui.rd != Register::Zero {
+                    self.regs[lui.rd as usize] = lui.imm31_12;
+                } else {
+                    panic!("Don't know what LUI X0, IMM should do!");
+                }
+
+                self.pc += 4;
+            },
             _ => panic!("Don't know how to decode opcode 0x{opcode:02X} / 0b{opcode:07b}"),
 
         }
