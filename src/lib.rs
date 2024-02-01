@@ -4,7 +4,7 @@ use std::path::Path;
 
 /// the core (or system?) emulator structure
 /// we start initially with the rv32i base ISA
-pub(crate) struct Emu {
+pub struct Emu {
     regs: [u32; 32],
     pc: u32,
     memory: Vec<u8>,
@@ -86,7 +86,7 @@ impl Emu {
     }
 
     pub fn set_pc(&mut self, pc: u32) {
-        assert!(pc < self.memory.len() as u32);
+        assert!(dbg!(pc) < dbg!(self.memory.len() as u32));
         self.pc = pc;
     }
 
@@ -109,6 +109,32 @@ impl Emu {
         }
     }
 
+    pub fn execute(&mut self, _steps: usize) {
+        let pc = self.pc() as usize;
+        let instr_bytes: [u8; 4] = if let Ok(four_bytes) = &(self.memory[pc..(pc+4)]).try_into() {
+            *four_bytes
+        } else {
+            panic!("Not enough bytes in memory to read one instruction a address 0x{pc:08X}!")
+        };
+
+        let instruction = u32::from_le_bytes(instr_bytes);
+
+        let opcode = instruction & OPCODE_MASK;
+
+        match opcode {
+            0b1101111 => { /* JAL - Jtype ( Utype?) */
+                let jal = Jtype::from(instruction);
+
+                let offset = dbg!(jal.offset);
+                if let Register::Zero = jal.rd {
+                    self.set_pc((pc as i32 + offset) as u32);
+                }
+            },
+            _ => panic!(" Don't know how to decode {}", opcode),
+
+        }
+    }
+
 }
 
 /// RV32I instruction types: R, I, S or U
@@ -116,6 +142,8 @@ impl Emu {
 const MASK_3_BITS: u32 = 0b0000_0111;
 const MASK_5_BITS: u32 = 0b0001_1111;
 const MASK_7_BITS: u32 = 0b0111_1111;
+const MASK_8_BITS: u32 = 0b1111_1111;
+const MASK_10_BITS: u32 = 0b0011_1111_1111;
 const MASK_12_BITS: u32 = 0b1111_1111_1111;
 const MASK_20_BITS: u32 = 0b1111_1111_1111_1111_1111;
 
@@ -226,6 +254,42 @@ impl From<u32> for Utype {
     }
 }
 
+struct Jtype {
+    rd: Register,
+    offset: i32,
+}
+
+impl From<u32> for Jtype {
+    fn from(instruction: u32) -> Self {
+        let rd = (instruction & RD_MASK) >> RD_SHIFT;
+        let rd = Register::from(rd);
+
+        // the riscv documentation says "j offset" / "jal x0, offset" is
+        // jtype and has the order
+        // bit   31 |30    21| 20 |19   12|
+        //   imm[20 |  10:1  | 11 | 19:12 ]
+
+
+        // sign extend the immediate
+        let instruction = dbg!(instruction as i32);
+        let offset31_20 = (instruction & 0x8000) >> 30 << 20;
+
+        let offset10_1 = (instruction & ((MASK_10_BITS as i32) << 21)) >> 20;
+        let offset11 = (instruction & (0x1 << 20)) >> 20 << 11;
+        // bits 19:12 are the same place in offset as they are in the instruction
+        let offset19_12 = instruction & ((MASK_8_BITS as i32) << 12);
+
+
+        let offset = offset31_20 | offset19_12 | offset11 | offset10_1;
+
+        eprintln!("{instruction:04X}");
+        eprintln!("{offset:04X} : 31:20 {offset31_20:04X} 19:12 {offset19_12:04X} 11 {offset11:04X} 10:1 {offset10_1:04X}");
+
+        Self {rd, offset}
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,6 +333,17 @@ mod tests {
         emu.set_pc(0x2000);
         assert_eq!(emu.pc(), 0x2000);
     }
+
+    #[test]
+    fn exec_j_start() {
+        let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
+        emu.set_pc(0x2000);
+        assert_eq!(emu.pc(), 0x2000);
+
+        emu.execute(1usize);
+        assert_eq!(emu.pc(), 0x2258);
+    }
+
 
     #[test]
     #[should_panic]
@@ -510,4 +585,36 @@ mod tests {
         assert_eq!(utype.rd, Register::T1);
         assert_eq!(utype.imm31_12, 1);
     }
+
+
+    #[test]
+    fn jtype_j_0x258() {
+        // pseudo-instruction "j offset" = "jal x0/Zero offset"
+        // 2000: 6f 00 80 25  	j	0x2258 <start>
+        //       imm20 10_1 11 19_12  (X0/Zero)  1101111
+        let instruction =
+            u32::from_le_bytes([0x6f, 0x00, 0x80, 0x25]);
+
+        let jtype = Jtype::from(instruction);
+
+        assert_eq!(jtype.rd, Register::Zero);
+        // the original instruction was at address 0x2000
+        assert_eq!(jtype.offset, 0x258i32);
+    }
+
+    #[test]
+    fn jtype_j_m0x2c() {
+        // pseudo-instruction "j offset" = "jal x0/Zero offset"
+        // 239c: 6f f0 5f fd  	j	0x2370
+        //       imm20 10_1 11 19_12  (X0/Zero)  1101111
+        let instruction =
+            u32::from_le_bytes([0x6f, 0xf0, 0x5f, 0xfd]);
+
+        let jtype = Jtype::from(instruction);
+
+        assert_eq!(jtype.rd, Register::Zero);
+        // the original instruction was at address 0x2000
+        assert_eq!(jtype.offset, -0x2c);
+    }
+
 }
