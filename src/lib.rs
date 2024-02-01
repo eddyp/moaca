@@ -81,6 +81,27 @@ impl Emu {
         }
     }
 
+    pub fn new_from_vec(mut memory: Vec<u8>, base: usize) -> Self {
+        let len = memory.len();
+        assert!(len >= 4);
+        let memory = if base == 0 {
+            memory
+        } else {
+            let mut mem = vec![0;base + len];
+            mem.truncate(base);
+            mem.append(&mut memory);
+
+            mem
+        };
+
+        Self {
+            regs: [0; 32],
+            pc: 0,
+            memory,
+        }
+    }
+
+
     pub fn pc(&self) -> u32 {
         self.pc
     }
@@ -370,6 +391,38 @@ mod tests {
         assert_eq!(emu.memory.as_slice().get(0x2000), Some(0x6f).as_ref());
         assert_eq!(emu.memory.as_slice().get(0x2124), Some(0x13).as_ref());
         assert_eq!(emu.memory.as_slice().get(0x229c), Some(0x93).as_ref());
+    }
+
+    #[test]
+    fn new_emu_from_vec() {
+        // 6f 00 80 25  	j	+0x258
+        // 13 01 41 f7  	addi	sp, sp, -140
+        let memory = vec![
+            0x6f, 0x00, 0x80, 0x25,
+            0x13, 0x01, 0x41, 0xf7,
+            ];
+        let emu = Emu::new_from_vec(memory, 0);
+        assert_eq!(emu.pc(), 0);
+        assert_eq!(emu.get_reg_x(0), 0);
+        assert_eq!(emu.memory.as_slice().get(0), Some(0x6f).as_ref());
+        assert_eq!(emu.memory.as_slice().get(3), Some(0x25).as_ref());
+        assert_eq!(emu.memory.as_slice().get(7), Some(0xf7).as_ref());
+    }
+
+    #[test]
+    fn new_emu_from_vec_offset_0x2000() {
+        // 6f 00 80 25  	j	+0x258
+        // 13 01 41 f7  	addi	sp, sp, -140
+        let memory = vec![
+            0x6f, 0x00, 0x80, 0x25,
+            0x13, 0x01, 0x41, 0xf7,
+            ];
+        let emu = Emu::new_from_vec(memory, 0x2000);
+        assert_eq!(emu.pc(), 0);
+        assert_eq!(emu.get_reg_x(0), 0);
+        assert_eq!(emu.memory.as_slice().get(0x2000), Some(0x6f).as_ref());
+        assert_eq!(emu.memory.as_slice().get(0x2003), Some(0x25).as_ref());
+        assert_eq!(emu.memory.as_slice().get(0x2007), Some(0xf7).as_ref());
     }
 
     #[test]
