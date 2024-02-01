@@ -113,42 +113,44 @@ impl Emu {
         }
     }
 
-    pub fn execute(&mut self, _steps: usize) {
-        let pc = self.pc() as usize;
-        let instr_bytes: [u8; 4] = if let Ok(four_bytes) = &(self.memory[pc..(pc+4)]).try_into() {
-            *four_bytes
-        } else {
-            panic!("Not enough bytes in memory to read one instruction a address 0x{pc:08X}!")
-        };
-
-        let instruction = u32::from_le_bytes(instr_bytes);
-
-        let opcode = instruction & OPCODE_MASK;
-
-        match opcode {
-            0b1101111 => { /* JAL - Jtype ( Utype?) */
-                let jal = Jtype::from(instruction);
-
-                let offset = dbg!(jal.offset);
-                if let Register::Zero = jal.rd {
-                    self.set_pc((pc as i32 + offset) as u32);
-                } else {
-                    panic!("Don't know how to execute 'JAL (Xn) offset'");
-                }
-            },
-            0b0110111 => { /* LUI - U type */
-                let lui = Utype::from(instruction);
-
-                if lui.rd != Register::Zero {
-                    self.regs[lui.rd as usize] = lui.imm31_12;
-                } else {
-                    panic!("Don't know what LUI X0, IMM should do!");
-                }
-
-                self.pc += 4;
-            },
-            _ => panic!("Don't know how to decode opcode 0x{opcode:02X} / 0b{opcode:07b}"),
-
+    pub fn execute(&mut self, steps: usize) {
+        for _ in 0..steps {
+            let pc = self.pc() as usize;
+            let instr_bytes: [u8; 4] = if let Ok(four_bytes) = &(self.memory[pc..(pc+4)]).try_into() {
+                *four_bytes
+            } else {
+                panic!("Not enough bytes in memory to read one instruction a address 0x{pc:08X}!")
+            };
+    
+            let instruction = u32::from_le_bytes(instr_bytes);
+    
+            let opcode = instruction & OPCODE_MASK;
+    
+            match opcode {
+                0b1101111 => { /* JAL - Jtype ( Utype?) */
+                    let jal = Jtype::from(instruction);
+    
+                    let offset = dbg!(jal.offset);
+                    if let Register::Zero = jal.rd {
+                        self.set_pc((pc as i32 + offset) as u32);
+                    } else {
+                        panic!("Don't know how to execute 'JAL (Xn) offset'");
+                    }
+                },
+                0b0110111 => { /* LUI - U type */
+                    let lui = Utype::from(instruction);
+    
+                    if lui.rd != Register::Zero {
+                        self.regs[lui.rd as usize] = lui.imm31_12;
+                    } else {
+                        panic!("Don't know what LUI X0, IMM should do!");
+                    }
+    
+                    self.pc += 4;
+                },
+                _ => panic!("Don't know how to decode opcode 0x{opcode:02X} / 0b{opcode:07b}"),
+    
+            }
         }
     }
 
