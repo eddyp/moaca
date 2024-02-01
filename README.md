@@ -1,4 +1,4 @@
-# Moaca
+# Moaca [![Rust](https://github.com/eddyp/moaca/actions/workflows/rust.yml/badge.svg)](https://github.com/eddyp/moaca/actions/workflows/rust.yml)
 
 A profiling emulator for cores, for now RISC-V RV32I.
 
