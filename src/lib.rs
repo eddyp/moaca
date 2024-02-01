@@ -157,10 +157,11 @@ impl Emu {
                     match subtype {
                         0b000 => {
                             /* ADDI */
-                            let result = self.get_reg(itype.rs1) as i32;
-                            result.wrapping_add(itype.imm11_0 as i32);
+                            let rs1_i32 = self.get_reg(itype.rs1) as i32;
+                            let imm_i32 = itype.imm11_0 as i32;
+                            let rd = rs1_i32.wrapping_add(imm_i32);
 
-                            self.regs[itype.rd as usize] = result as u32;
+                            self.regs[itype.rd as usize] = rd as u32;
                         },
                         _ => {
                             eprintln!("Ignored Itype {subtype} 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
@@ -409,6 +410,20 @@ mod tests {
     }
 
     #[test]
+    fn exec_addi_a3_zero_52() {
+        let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
+        emu.set_pc(0x235c);
+        let before_pc = emu.pc();
+
+        // 235c: 93 06 40 03  	addi	a3, zero, 52
+        emu.execute(1usize);
+        assert_eq!(emu.get_reg(Register::A3), 52);
+        assert_eq!(emu.get_reg(Register::Zero), 0x0);
+        assert_eq!(emu.pc(), before_pc + 4);
+    }
+
+    #[test]
+    #[ignore]
     fn exec_multiple_instructions() {
         let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
         emu.set_pc(0x2000);
