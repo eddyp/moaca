@@ -4,10 +4,11 @@ use std::path::Path;
 
 /// the core (or system?) emulator structure
 /// we start initially with the rv32i base ISA
-pub(crate) struct Emu {
+pub struct Emu {
     regs: [u32; 32],
     pc: u32,
     memory: Vec<u8>,
+    csr: Vec<u8>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -66,6 +67,7 @@ impl Emu {
             regs: [0; 32],
             pc: 0,
             memory: vec![0; size],
+            csr: vec![0; 4096],
         }
     }
 
@@ -75,11 +77,34 @@ impl Emu {
                 regs: [0; 32],
                 pc: 0,
                 memory,
+                csr: vec![0; 4096],
             }
         } else {
             panic!("Can't load memory from file {filename} at offset {base}");
         }
     }
+
+    pub fn new_from_vec(mut memory: Vec<u8>, base: usize) -> Self {
+        let len = memory.len();
+        assert!(len >= 4);
+        let memory = if base == 0 {
+            memory
+        } else {
+            let mut mem = vec![0;base + len];
+            mem.truncate(base);
+            mem.append(&mut memory);
+
+            mem
+        };
+
+        Self {
+            regs: [0; 32],
+            pc: 0,
+            memory,
+            csr: vec![0; 4096],
+        }
+    }
+
 
     pub fn pc(&self) -> u32 {
         self.pc
@@ -90,8 +115,12 @@ impl Emu {
         self.pc = pc;
     }
 
-    pub fn get_reg(&self, reg_index: u32) -> u32 {
+    pub fn get_reg_x(&self, reg_index: u32) -> u32 {
         self.regs[Register::from(reg_index) as usize]
+    }
+
+    pub fn get_reg(&self, reg_id: Register) -> u32 {
+        self.regs[reg_id as usize]
     }
 
     fn load_memory_vec_from_file(raw_binary_file: &str, base: usize) -> Option<Vec<u8>> {
@@ -109,6 +138,121 @@ impl Emu {
         }
     }
 
+    pub fn execute(&mut self, steps: usize) {
+        let mut found_unkown_opcodes = 0usize;
+
+        for _ in 0..steps {
+            let pc = self.pc() as usize;
+            let instr_bytes: [u8; 4] = if let Ok(four_bytes) = &(self.memory[pc..(pc+4)]).try_into() {
+                *four_bytes
+            } else {
+                panic!("Not enough bytes in memory to read one instruction a address 0x{pc:08X}!")
+            };
+
+            let instruction = u32::from_le_bytes(instr_bytes);
+
+            let opcode = instruction & OPCODE_MASK;
+
+            match opcode {
+                0b1101111 => { /* JAL - Jtype ( Utype?) */
+                    let jal = Jtype::from(instruction);
+
+                    let offset = jal.offset;
+                    if Register::Zero != jal.rd {
+                        self.regs[jal.rd as usize] = self.pc + 4;
+                    }
+                    self.set_pc((pc as i32 + offset -4) as u32);
+                },
+                0b0110111 => { /* LUI - U type */
+                    let lui = Utype::from(instruction);
+
+                    if lui.rd != Register::Zero {
+                        self.regs[lui.rd as usize] = lui.imm31_12;
+                    } else {
+                        panic!("Don't know what LUI X0, IMM should do!");
+                    }
+
+                },
+                0b0010011 => { /* I-type instructions - ADDI, SLTI... */
+                    let itype = Itype::from(instruction);
+
+                    let subtype = itype.funct3;
+
+                    match subtype {
+                        0b000 => {
+                            /* ADDI */
+                            let rs1_i32 = self.get_reg(itype.rs1) as i32;
+                            let imm_i32 = itype.imm11_0 as i32;
+                            let rd = rs1_i32.wrapping_add(imm_i32);
+
+                            self.regs[itype.rd as usize] = rd as u32;
+                        },
+                        _ => {
+                            eprintln!("Ignored Itype {subtype} 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
+                            found_unkown_opcodes += 1;
+                        }
+                    };
+
+                },
+                0b0100011 => { // SW, SH, SB
+                    let sx = Stype::from(instruction);
+                    let subtype = sx.funct3;
+                    let base_i32 = self.get_reg(sx.rs1) as i32;
+                    let offset = sx.imm11_0 as i32;
+
+                    match subtype {
+                        0b010 => { // SW
+                            use std::io::Write;
+                            let address = base_i32.wrapping_add(offset) as u32 as usize;
+                            let bytes = self.get_reg(sx.rs2).to_le_bytes();
+
+                            eprintln!("SW address={address:08x} B={base_i32} O={offset} ({base_i32:08x} + {offset:08x}) rs2={bytes:?}");
+                            eprintln!("self.memory[address..(address+4)] = {:?}", &self.memory.as_slice()[address..(address+4)]);
+
+                            let written = (&mut self.memory[address..]).write(&bytes).unwrap();
+
+                            if written < 4 {
+                                panic!("SW instruction 0x{instruction:08X} at {pc:08X} wrote {written} bytes instead of 4");
+                            }
+                        },
+                        _ => {
+                            eprintln!("Ignored Stype {subtype} 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
+                            found_unkown_opcodes += 1;
+                            unimplemented!("Stype variant {subtype}");
+                        }
+                    }
+
+                },
+                /* Zicsr */
+                0b1110011 => { /* SYSTEM / CSR* */
+                    let itype = Itype::from(instruction);
+                    let subtype = itype.funct3;
+
+                    match subtype {
+                        0b001 => { // CSRRW
+                            eprintln!("Ignorring CSRRW ({subtype}) @ address 0x{pc:08X}");
+                        },
+                        _ => {
+                            eprintln!("Ignored SYSTEM {subtype} 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
+                            found_unkown_opcodes += 1;
+                        },
+                    };
+
+                },
+                _ =>  {
+                    eprintln!("Ignoring unhandled opcode 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
+                    found_unkown_opcodes += 1;
+                },
+                // _ => panic!("Don't know how to decode opcode 0x{opcode:02X} / 0b{opcode:07b}"),
+
+            }
+            self.pc += 4;
+        }
+        if found_unkown_opcodes > 0 {
+            panic!("Skipped {found_unkown_opcodes} instructions with unknown opcodes after {steps} steps. Stopping!");
+        }
+    }
+
 }
 
 /// RV32I instruction types: R, I, S or U
@@ -116,6 +260,8 @@ impl Emu {
 const MASK_3_BITS: u32 = 0b0000_0111;
 const MASK_5_BITS: u32 = 0b0001_1111;
 const MASK_7_BITS: u32 = 0b0111_1111;
+const MASK_8_BITS: u32 = 0b1111_1111;
+const MASK_10_BITS: u32 = 0b0011_1111_1111;
 const MASK_12_BITS: u32 = 0b1111_1111_1111;
 const MASK_20_BITS: u32 = 0b1111_1111_1111_1111_1111;
 
@@ -226,6 +372,42 @@ impl From<u32> for Utype {
     }
 }
 
+struct Jtype {
+    rd: Register,
+    offset: i32,
+}
+
+impl From<u32> for Jtype {
+    fn from(instruction: u32) -> Self {
+        let rd = (instruction & RD_MASK) >> RD_SHIFT;
+        let rd = Register::from(rd);
+
+        // the riscv documentation says "j offset" / "jal x0, offset" is
+        // jtype and has the order
+        // bit   31 |30    21| 20 |19   12|
+        //   imm[20 |  10:1  | 11 | 19:12 ]
+
+
+        // sign extend the immediate
+        let instruction = instruction as i32;
+        let offset31_20 = (instruction & (0x1 << 31)) >> 31 << 20;
+
+        let offset10_1 = (instruction & ((MASK_10_BITS as i32) << 21)) >> 20;
+        let offset11 = (instruction & (0x1 << 20)) >> 20 << 11;
+        // bits 19:12 are the same place in offset as they are in the instruction
+        let offset19_12 = instruction & ((MASK_8_BITS as i32) << 12);
+
+
+        let offset = offset31_20 | offset19_12 | offset11 | offset10_1;
+
+        // dbg!("Jtype instruction: {instruction:04X}");
+        // dbg!("offset: {offset:04X} : 31:20 {offset31_20:04X} 19:12 {offset19_12:04X} 11 {offset11:04X} 10:1 {offset10_1:04X}");
+
+        Self {rd, offset}
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,14 +416,16 @@ mod tests {
     fn new_emu() {
         let emu = Emu::new(8);
         assert_eq!(emu.pc(), 0);
-        assert_eq!(emu.get_reg(0), 0);
+        for i in 0..32 {
+            assert_eq!(emu.get_reg_x(i), 0);
+        }
     }
 
     #[test]
     fn new_emu_from_file_offset_0() {
         let emu = Emu::new_from_file("images/basic.binary", 0);
         assert_eq!(emu.pc(), 0);
-        assert_eq!(emu.get_reg(0), 0);
+        assert_eq!(emu.get_reg_x(0), 0);
         assert_eq!(emu.memory.as_slice().get(0), Some(0x6f).as_ref());
         assert_eq!(emu.memory.as_slice().get(0x124), Some(0x13).as_ref());
     }
@@ -250,11 +434,44 @@ mod tests {
     fn new_emu_from_file_offset_0x2000() {
         let emu = Emu::new_from_file("images/basic.binary", 0x2000);
         assert_eq!(emu.pc(), 0);
-        assert_eq!(emu.get_reg(0), 0);
+        assert_eq!(emu.get_reg_x(0), 0);
         assert_eq!(emu.memory.as_slice().get(0x2000), Some(0x6f).as_ref());
         assert_eq!(emu.memory.as_slice().get(0x2124), Some(0x13).as_ref());
         assert_eq!(emu.memory.as_slice().get(0x229c), Some(0x93).as_ref());
     }
+
+    #[test]
+    fn new_emu_from_vec() {
+        // 6f 00 80 25  	j	+0x258
+        // 13 01 41 f7  	addi	sp, sp, -140
+        let memory = vec![
+            0x6f, 0x00, 0x80, 0x25,
+            0x13, 0x01, 0x41, 0xf7,
+            ];
+        let emu = Emu::new_from_vec(memory, 0);
+        assert_eq!(emu.pc(), 0);
+        assert_eq!(emu.get_reg_x(0), 0);
+        assert_eq!(emu.memory.as_slice().get(0), Some(0x6f).as_ref());
+        assert_eq!(emu.memory.as_slice().get(3), Some(0x25).as_ref());
+        assert_eq!(emu.memory.as_slice().get(7), Some(0xf7).as_ref());
+    }
+
+    #[test]
+    fn new_emu_from_vec_offset_0x2000() {
+        // 6f 00 80 25  	j	+0x258
+        // 13 01 41 f7  	addi	sp, sp, -140
+        let memory = vec![
+            0x6f, 0x00, 0x80, 0x25,
+            0x13, 0x01, 0x41, 0xf7,
+            ];
+        let emu = Emu::new_from_vec(memory, 0x2000);
+        assert_eq!(emu.pc(), 0);
+        assert_eq!(emu.get_reg_x(0), 0);
+        assert_eq!(emu.memory.as_slice().get(0x2000), Some(0x6f).as_ref());
+        assert_eq!(emu.memory.as_slice().get(0x2003), Some(0x25).as_ref());
+        assert_eq!(emu.memory.as_slice().get(0x2007), Some(0xf7).as_ref());
+    }
+
 
     #[test]
     fn set_pc_at_4() {
@@ -268,6 +485,75 @@ mod tests {
         let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
         emu.set_pc(0x2000);
         assert_eq!(emu.pc(), 0x2000);
+    }
+
+    #[test]
+    fn exec_j_start() {
+        let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
+        emu.set_pc(0x2000);
+        assert_eq!(emu.pc(), 0x2000);
+
+        emu.execute(1usize);
+        assert_eq!(emu.pc(), 0x2258);
+    }
+
+    #[test]
+    fn exec_lui_sp_5() {
+        let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
+        emu.set_pc(0x2258);
+        let before_pc = emu.pc();
+        assert_eq!(before_pc, 0x2258);
+
+        // 2258: 37 51 00 00  	lui	sp, 5
+        emu.execute(1usize);
+        assert_eq!(emu.get_reg(Register::Sp), 0x5);
+        assert_eq!(emu.pc(), before_pc + 4);
+    }
+
+    #[test]
+    fn exec_addi_a3_zero_52() {
+        let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
+        emu.set_pc(0x235c);
+        let before_pc = emu.pc();
+
+        // 235c: 93 06 40 03  	addi	a3, zero, 52
+        emu.execute(1usize);
+        assert_eq!(emu.get_reg(Register::A3), 52);
+        assert_eq!(emu.get_reg(Register::Zero), 0x0);
+        assert_eq!(emu.pc(), before_pc + 4);
+    }
+
+    #[test]
+    fn exec_sw_a5_4_a0() {
+        // 23 22 f5 00  	sw	a5, 4(a0)
+        let memory = vec![
+            0x23, 0x22, 0xf5, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+            // we'll make A0 point here
+            0x00, 0x00, 0x00, 0x00,
+            // we'll overwrite these
+            0x00, 0x00, 0x00, 0x00,
+            ];
+        let mut emu = Emu::new_from_vec(memory, 0x0);
+
+        let before_pc = emu.pc();
+        emu.regs[Register::A0 as usize] = 8;
+        emu.regs[Register::A5 as usize] = 0x11223344;
+
+        emu.execute(1usize);
+        eprintln!("{:02x?}", &emu.memory);
+        assert_eq!(emu.memory[12..16], [0x44, 0x33, 0x22, 0x11]);
+        assert_eq!(emu.pc(), before_pc + 4);
+    }
+
+    #[test]
+    #[ignore]
+    fn exec_multiple_instructions() {
+        let mut emu = Emu::new_from_file("images/basic.binary", 0x2000);
+        emu.set_pc(0x2000);
+        assert_eq!(emu.pc(), 0x2000);
+        emu.execute(32);
+        assert_ne!(emu.pc(), 0x2258);
     }
 
     #[test]
@@ -510,4 +796,36 @@ mod tests {
         assert_eq!(utype.rd, Register::T1);
         assert_eq!(utype.imm31_12, 1);
     }
+
+
+    #[test]
+    fn jtype_j_0x258() {
+        // pseudo-instruction "j offset" = "jal x0/Zero offset"
+        // 2000: 6f 00 80 25  	j	0x2258 <start>
+        //       imm20 10_1 11 19_12  (X0/Zero)  1101111
+        let instruction =
+            u32::from_le_bytes([0x6f, 0x00, 0x80, 0x25]);
+
+        let jtype = Jtype::from(instruction);
+
+        assert_eq!(jtype.rd, Register::Zero);
+        // the original instruction was at address 0x2000
+        assert_eq!(jtype.offset, 0x258i32);
+    }
+
+    #[test]
+    fn jtype_j_m0x2c() {
+        // pseudo-instruction "j offset" = "jal x0/Zero offset"
+        // 239c: 6f f0 5f fd  	j	0x2370
+        //       imm20 10_1 11 19_12  (X0/Zero)  1101111
+        let instruction =
+            u32::from_le_bytes([0x6f, 0xf0, 0x5f, 0xfd]);
+
+        let jtype = Jtype::from(instruction);
+
+        assert_eq!(jtype.rd, Register::Zero);
+        // the original instruction was at address 0x239c
+        assert_eq!(jtype.offset, -0x2c);
+    }
+
 }
