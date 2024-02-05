@@ -195,20 +195,33 @@ impl Emu {
 
                 },
                 0b0100011 => { // SW, SH, SB
-                    // abuse Rtype until we have Stype
-                    let sx = Rtype::from(instruction);
+                    let sx = Stype::from(instruction);
                     let subtype = sx.funct3;
+                    let base_i32 = self.get_reg(sx.rs1) as i32;
+                    let offset = sx.imm11_0 as i32;
 
                     eprintln!("Ignored Stype {subtype} 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
                     found_unkown_opcodes += 1;
 
                     match subtype {
                         0b010 => { // SW
-                            unimplemented!("");
+                            use std::io::Write;
+                            let address = base_i32.wrapping_add(offset) as u32 as usize;
+                            let bytes = self.get_reg(sx.rs2).to_le_bytes();
 
+                            eprintln!("SW address={address:08x} B={base_i32} O={offset} ({base_i32:08x} + {offset:08x}) rs2={bytes:?}");
+                            eprintln!("self.memory[address..(address+4)] = {:?}", &self.memory.as_slice()[address..(address+4)]);
+
+                            let written = (&mut self.memory[address..]).write(&bytes).unwrap();
+
+                            if written < 4 {
+                                panic!("SW instruction 0x{instruction:08X} at {pc:08X} wrote {written} bytes instead of 4");
+                            }
                         },
                         _ => {
-                            unimplemented!("");
+                            eprintln!("Ignored Stype {subtype} 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
+                            found_unkown_opcodes += 1;
+                            unimplemented!("Stype variant {subtype}");
                         }
                     }
 
@@ -510,6 +523,29 @@ mod tests {
         emu.execute(1usize);
         assert_eq!(emu.get_reg(Register::A3), 52);
         assert_eq!(emu.get_reg(Register::Zero), 0x0);
+        assert_eq!(emu.pc(), before_pc + 4);
+    }
+
+    #[test]
+    fn exec_sw_a5_4_a0() {
+        // 23 22 f5 00  	sw	a5, 4(a0)
+        let memory = vec![
+            0x23, 0x22, 0xf5, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+            // we'll make A0 point here
+            0x00, 0x00, 0x00, 0x00,
+            // we'll overwrite these
+            0x00, 0x00, 0x00, 0x00,
+            ];
+        let mut emu = Emu::new_from_vec(memory, 0x0);
+
+        let before_pc = emu.pc();
+        emu.regs[Register::A0 as usize] = 8;
+        emu.regs[Register::A5 as usize] = 0x11223344;
+
+        emu.execute(1usize);
+        eprintln!("{:02x?}", &emu.memory);
+        assert_eq!(emu.memory[12..16], [0x44, 0x33, 0x22, 0x11]);
         assert_eq!(emu.pc(), before_pc + 4);
     }
 
