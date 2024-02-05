@@ -200,9 +200,6 @@ impl Emu {
                     let base_i32 = self.get_reg(sx.rs1) as i32;
                     let offset = sx.imm11_0 as i32;
 
-                    eprintln!("Ignored Stype {subtype} 0x{opcode:02X} / 0b{opcode:07b} @ address 0x{pc:08X}");
-                    found_unkown_opcodes += 1;
-
                     match subtype {
                         0b010 => { // SW
                             use std::io::Write;
